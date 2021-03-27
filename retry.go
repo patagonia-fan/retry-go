@@ -145,10 +145,8 @@ func Do(retryableFunc RetryableFunc, opts ...Option) error {
 				delayTime = config.maxDelay
 			}
 
-			select {
-			case <-time.After(delayTime):
-			case <-config.context.Done():
-				return config.context.Err()
+			if ctxErr := waitForContextOrTimeout(config.context, delayTime); ctxErr != nil {
+				return ctxErr
 			}
 
 		} else {
@@ -222,4 +220,24 @@ func unpackUnrecoverable(err error) error {
 	}
 
 	return err
+}
+
+// waitForContextOrTimeout Checks for either context error or timeout,
+// Waits for context error, waiting at most the indicated timeout
+func waitForContextOrTimeout(ctx context.Context, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer func() {
+		timer.Stop()
+		select {
+		case <-timer.C:
+		default:
+		}
+	}()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
